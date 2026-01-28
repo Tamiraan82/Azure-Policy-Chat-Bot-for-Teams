@@ -70,35 +70,10 @@ Users interacting with the bot in Teams must have at least:
 ## 6. Architecture Diagrams
 
 ### System Overview
-```mermaid
-graph LR
-    User((User)) -- Teams App --> ACA[Container Apps]
-    ACA -- Managed Identity --> AOI[Azure OpenAI]
-    ACA -- Managed Identity --> KV[Key Vault]
-    ACA -- OBO Token --> ARG[Azure Resource Graph]
-    ACA -- OBO Token --> ARM[ARM REST API]
-```
+![Technical Architecture](docs/images/architecture.png)
 
 ### Authentication Flow (OBO)
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant T as Teams
-    participant B as Bot (ACA)
-    participant E as Entra ID
-    participant A as Azure API
-    
-    U->>T: Ask "Get non-compliant VMs"
-    T->>E: Get SSO Token (id_token)
-    E-->>T: Return Token
-    T->>B: Request with SSO Token
-    B->>E: Exchange SSO Token for Azure API Token (OBO)
-    E-->>B: Return Access Token for Azure RM
-    B->>A: Query ARG/ARM with Access Token
-    A-->>B: Results (Filtered by User RBAC)
-    B-->>T: Render Adaptive Card
-    T-->>U: Show Results
-```
+![OAuth2 OBO Flow](docs/images/auth_flow.png)
 
 ## 7. Terraform Implementation Snippet
 

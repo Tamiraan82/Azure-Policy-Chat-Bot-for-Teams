@@ -38,7 +38,15 @@ The central intelligence that routes requests to appropriate data sources:
 The bot is built on a **Zero Trust** and **Zero-Secret** foundation, ensuring that every request is explicitly authenticated and authorized using the user's own identity, while the bot itself uses **Federated Identity**.
 
 ### 1. Identity & OAuth2 Flows
-The bot implements the **On-Behalf-Of (OBO)** flow. The backend authenticates via **Federated Credentials** (Workload Identity), eliminating the need for client secrets.
+The bot implements a **Zero-Secret** architecture involving four key identities:
+- **Project UMI**: The runtime identity of the Container App.
+- **Bot App**: The public identity for Teams integration.
+- **API App**: The delegated token broker for Azure Resource Graph.
+- **ADO Principal**: The federated identity used for infrastructure deployment.
+
+![Identity Relationship](docs/images/identity_relationship.png)
+
+Backend authentication is performed via **Federated Credentials**, ensuring an OBO flow without `MICROSOFT_APP_PASSWORD`.
 
 ![OAuth2 OBO Flow](docs/images/auth_flow.png)
 

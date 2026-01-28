@@ -16,11 +16,11 @@ To ensure compatibility and security, use the following versions:
 
 ## 2. Azure Regional Strategy
 
-Deploy all resources in a single region where **Azure OpenAI** is available to minimize latency.
+To comply with regional hosting requirements, all resources must be deployed within **US-based regions**. The deployment is further constrained by the availability of GPT-4o in Azure OpenAI.
 
 > [!IMPORTANT]
-> **Recommended Region**: `swedencentral` or `eastus2`.
-> Sweden Central offers superior availability for GPT-4 (including Turbo).
+> **Recommended Regions**: `eastus2` or `westcentralus`.
+> These regions provide the best availability for GPT-4o and meet the "US-only" hosting mandate. Non-US regions (e.g., `swedencentral`) are strictly prohibited.
 
 ## 3. Required Azure Resources
 
@@ -35,20 +35,27 @@ Deploy all resources in a single region where **Azure OpenAI** is available to m
 
 ## 4. Federated Identity & Zero-Secret Strategy
 
-This solution eliminates long-lived client secrets in favor of **OIDC Federation** and **Managed Identities**.
+This solution utilizes four distinct identities, each with a specific security boundary.
 
-### A. Infrastructure Deployment (Terraform via ADO)
-Instead of using a Service Principal with a secret, use **Workload Identity Federation**:
-1. Create an Azure DevOps Service Connection using **Workload Identity Federation**.
-2. Configure the Terraform provider to use OIDC:
-   ```hcl
-   provider "azurerm" {
-     features {}
-     use_oidc = true
-   }
-   ```
+### A. Granular Identity Breakdown
 
-### B. Managed Identity vs. Secrets
+| Identity | Type | Purpose | Key Functions | Essential Permissions |
+| :--- | :--- | :--- | :--- | :--- |
+| **Bot Backend Identity** | User-Assigned Managed Identity (UMI) | Represents the Container App. | Fetches configuration from Key Vault; authenticates to OpenAI; acts as the **Subject** for OBO federation. | `Key Vault Secrets User`, `Cognitive Services User`, `AcrPull`. |
+| **Bot App Registration** | Entra ID App (Multi-tenant) | Teams "Passport". | Identity for the Bot Framework. Enables SSO in Teams. | `openid`, `profile`. |
+| **API / OBO App Registration** | Entra ID App (Service Principal) | Token "Broker". | Exchanges Teams user tokens for Azure Management tokens via OBO flow. | `Azure Service Management (user_impersonation)`. |
+| **ADO Deployer** | Service Principal (Federated) | Infrastructure "Builder". | Provisions Azure resources via Terraform. | `Owner` or `Contributor` + `User Access Administrator` (at RG scope). |
+
+### B. Federated Trust Model (Zero-Secret)
+
+Traditional client secrets are replaced by **Federated Credentials**, establishing trust between these identities without passwords:
+
+![Identity Relationship Diagram](docs/images/identity_relationship.png)
+
+1.  **Bot-to-Teams Trust**: The **Bot App Registration** is configured with a Federated Credential where the **Issuer** is `https://login.microsoftonline.com/{tenant_id}/v2.0` and the **Subject** is the Bot Backend UMI.
+2.  **Deployment Trust**: The **ADO Deployer** uses OIDC (OpenID Connect). Azure DevOps generates a short-lived token that Azure Entra ID validates against the Federated Credential on the Service Principal.
+
+### C. Managed Identity vs. Secrets
 While **Federated Identity** eliminates the need for long-lived client secrets, Azure Key Vault remains a critical component for centralizing sensitive application configuration and external tokens.
 
 | Secret Item | Source | Type | Purpose |
@@ -77,6 +84,12 @@ Generating accurate Kusto Query Language (KQL) for Azure Resource Graph requires
 
 > [!TIP]
 > **Prompting Strategy**: Provide the LLM with a schema snippet of `Microsoft.ResourceGraph/resources` to improve KQL accuracy for exotic resource types.
+
+### D. Rationale: Why GPT-4o vs. GPT-5
+While GPT-5 represents the next generation of AI, it is not recommended for this production governance bot for several reasons:
+- **Production Stability**: GPT-4o is the current enterprise standard in Azure OpenAI, offering the best balance of reliability and performance.
+- **KQL Proficiency**: GPT-4o is exceptionally optimized for structured query generation (KQL), minimizing syntax errors.
+- **Regional Availability**: GPT-4o is readily available in the mandated US regions (`eastus2`), whereas next-gen models often face initial regional constraints.
 
 ## 6. Roles & Identities (Least Privilege)
 

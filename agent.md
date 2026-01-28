@@ -7,17 +7,8 @@ This agent is an intelligent chat bot designed to answer governance and complian
 
 The system follows a layered architecture with clear separation of concerns:
 
-```mermaid
-graph TD
-    User((User)) --> Teams[Chat UI: Microsoft Teams]
-    Teams --> LLM[LLM: Intent & Entity Extraction]
-    LLM --> Orchestrator[Query Orchestrator]
-    Orchestrator --> ARG[Azure Resource Graph]
-    Orchestrator --> ARM[ARM REST API]
-    ARG --> Formatter[Response Formatter]
-    ARM --> Formatter
-    Formatter --> Teams
-```
+### System Architecture
+![Technical Architecture](docs/images/architecture.png)
 
 ### Core Components
 
@@ -26,7 +17,7 @@ graph TD
 - **Capabilities**: Rich formatting, interactive buttons, and deep links to the Azure Portal.
 
 #### 2. LLM Layer (Intelligence)
-- **Service**: Azure OpenAI Service (GPT-4).
+- **Service**: Azure OpenAI Service (**GPT-4o** or **GPT-4 Turbo**).
 - **Responsibilities**:
   - **Intent Detection**: Parsing user questions (compliance checks, exemption queries, resource details).
   - **Entity Extraction**: Identifying resource names, subscription IDs, and time ranges.
@@ -44,29 +35,12 @@ The central intelligence that routes requests to appropriate data sources:
 
 ## Authentication & Security (Zero Trust Architecture)
 
-The bot is built on a **Zero Trust** foundation, ensuring that every request is explicitly authenticated and authorized using the user's own identity.
+The bot is built on a **Zero Trust** and **Zero-Secret** foundation, ensuring that every request is explicitly authenticated and authorized using the user's own identity, while the bot itself uses **Federated Identity**.
 
 ### 1. Identity & OAuth2 Flows
-The bot implements the **On-Behalf-Of (OBO)** flow to ensure it never has standing permissions.
+The bot implements the **On-Behalf-Of (OBO)** flow. The backend authenticates via **Federated Credentials** (Workload Identity), eliminating the need for client secrets.
 
-```mermaid
-sequenceDiagram
-    participant User as Teams User
-    participant Teams as MS Teams Client
-    participant Bot as Policy Bot (Backend)
-    participant Entra as Microsoft Entra ID
-    participant Azure as Azure Management APIs (ARG/ARM)
-
-    User->>Teams: Sends Message
-    Teams->>Entra: Requests User Token (SSO)
-    Entra-->>Teams: Returns JWT (id_token/access_token)
-    Teams->>Bot: Forwards User Token
-    Bot->>Entra: OBO Exchange (User Token -> Azure API Token)
-    Entra-->>Bot: Returns Downstream Access Token
-    Bot->>Azure: Execute Query with User Token
-    Azure-->>Bot: Returns Authorized Results
-    Bot->>User: Renders Results in Teams
-```
+![OAuth2 OBO Flow](docs/images/auth_flow.png)
 
 ### 2. Zero Trust Principles in Practice
 - **Explicit Verification**: Every query is performed using a token derived from the user's active session. The bot validates the `tid` (Tenant ID) and `aud` (Audience) of incoming tokens.
@@ -75,7 +49,7 @@ sequenceDiagram
     - If a user lacks `Microsoft.ResourceGraph/resources/read` permissions on a scope, the query returns an empty set.
     - **Scope Injection**: The orchestrator automatically appends scope filters (e.g., specific management groups) based on user context to prevent accidental broad queries.
 - **Assume Breach (Infrastructure Security)**:
-    - **Managed Identities**: Service-to-service communication (e.g., Bot to Key Vault or OpenAI) uses Managed Identities; no secrets are stored in code or environment variables.
+    - **Federated Managed Identities**: The Container App uses a User-Assigned Managed Identity with Federated Credentials for authentication, removing the need for `MICROSOFT_APP_PASSWORD`.
     - **VNet Integration**: The Container App resides in a private VNet. External access is routed through a Web Application Firewall (WAF) or restricted Teams webhooks.
     - **Data Minimization**: The bot does not store query results or user compliance data. It acts as a stateless proxy between Teams and Azure.
 

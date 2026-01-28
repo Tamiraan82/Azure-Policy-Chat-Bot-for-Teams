@@ -27,7 +27,7 @@ Deploy all resources in a single region where **Azure OpenAI** is available to m
 | Resource | Service | Purpose |
 | :--- | :--- | :--- |
 | **Compute** | Azure Container Apps | Hosts the Python bot backend with User-Assigned Identity. |
-| **Intelligence** | Azure OpenAI Service | Intent extraction and KQL generation. |
+| **Intelligence** | Azure OpenAI Service | Intent extraction and KQL generation (**GPT-4o** or **GPT-4 Turbo**). |
 | **Security** | Azure Key Vault | Stores application configuration (No client secrets). |
 | **Identity** | User-Assigned Managed Identity | Zero-secret identity for the Container App. |
 | **Storage** | Azure Container Registry | Stores the bot's Docker images. |
@@ -58,7 +58,19 @@ The Bot App Registration (used for Teams) communicates with the backend via **Fe
 - **Federation**: This app should also be configured with a Federated Credential trust for the Bot's Managed Identity.
 - **Permissions**: `Azure Service Management (user_impersonation)`.
 
-## 5. Roles & Identities (Least Privilege)
+## 5. OpenAI Model Selection for KQL
+
+Generating accurate Kusto Query Language (KQL) for Azure Resource Graph requires high reasoning capabilities and a large context window to process complex policy schemas.
+
+| Model | Recommended Version | Strengths |
+| :--- | :--- | :--- |
+| **GPT-4o** | `2024-05-13` (or later) | **Primary Choice**. Superior speed and reasoning for KQL syntax. |
+| **GPT-4 Turbo** | `2024-04-09` | High stability and large context window (128k) for multi-shot prompting. |
+
+> [!TIP]
+> **Prompting Strategy**: Provide the LLM with a schema snippet of `Microsoft.ResourceGraph/resources` to improve KQL accuracy for exotic resource types.
+
+## 6. Roles & Identities (Least Privilege)
 
 The Bot backend has **zero** standing reader/contributor roles on subscriptions. All compliance data is fetched using the user's delegated identity.
 
@@ -70,7 +82,7 @@ The Bot backend has **zero** standing reader/contributor roles on subscriptions.
 ### User RBAC Requirements
 - Users must have `Reader` permissions on the target subscriptions/resource groups to see compliance data.
 
-## 6. Architecture Diagrams
+## 7. Architecture Diagrams
 
 ### System Overview
 ![Technical Architecture](docs/images/architecture.png)
@@ -78,7 +90,7 @@ The Bot backend has **zero** standing reader/contributor roles on subscriptions.
 ### Authentication Flow (OBO)
 ![OAuth2 OBO Flow](docs/images/auth_flow.png)
 
-## 7. Terraform Implementation Snippet (OIDC & Managed Identity)
+## 8. Terraform Implementation Snippet (OIDC & Managed Identity)
 
 ```hcl
 # Use Managed Identity for the Container App

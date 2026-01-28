@@ -48,10 +48,18 @@ Instead of using a Service Principal with a secret, use **Workload Identity Fede
    }
    ```
 
-### B. Bot App Registration (Federated Credentials)
-The Bot App Registration (used for Teams) communicates with the backend via **Federated Credentials**:
-- **Subject**: The User-Assigned Managed Identity of the Container App.
-- **Trust**: The Bot App registration trusts the Managed Identity, eliminating the need for a `MICROSOFT_APP_PASSWORD`.
+### B. Managed Identity vs. Secrets
+While **Federated Identity** eliminates the need for long-lived client secrets, Azure Key Vault remains a critical component for centralizing sensitive application configuration and external tokens.
+
+| Secret Item | Source | Type | Purpose |
+| :--- | :--- | :--- | :--- |
+| `APPINSIGHTS_CONNECTION_STRING` | Terraform | Secret | Securely pass the monitoring key to the Container App. |
+| `OPENAI_DEPLOYMENT_NAME` | Terraform | Secret | The specific deployment ID (e.g., `gpt-4o-deployment`). |
+| `TEAMS_MANIFEST_ID` | Manual/App | Config | Centralized ID for the Teams application. |
+| `EXTERNAL_API_KEYS` | Manual | Secret | Any future 3rd party integrations (e.g., ServiceNow). |
+
+> [!NOTE]
+> The `MICROSOFT_APP_PASSWORD` is **not required** in this architecture because we use Federated Credentials between the Bot App and the Managed Identity.
 
 ### C. API / OBO App Registration
 - **Purpose**: Facilitates On-Behalf-Of (OBO) token exchange for Azure Graph/ARM.

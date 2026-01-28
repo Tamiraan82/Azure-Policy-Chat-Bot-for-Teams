@@ -50,8 +50,8 @@ The bot implements the **On-Behalf-Of (OBO)** flow. The backend authenticates vi
     - **Scope Injection**: The orchestrator automatically appends scope filters (e.g., specific management groups) based on user context to prevent accidental broad queries.
 - **Assume Breach (Infrastructure Security)**:
     - **Federated Managed Identities**: The Container App uses a User-Assigned Managed Identity with Federated Credentials for authentication, removing the need for `MICROSOFT_APP_PASSWORD`.
-    - **VNet Integration**: The Container App resides in a private VNet. External access is routed through a Web Application Firewall (WAF) or restricted Teams webhooks.
-    - **Data Minimization**: The bot does not store query results or user compliance data. It acts as a stateless proxy between Teams and Azure.
+    - **Key Vault Centralization**: All non-identity sensitive configuration (e.g., App Insights Connection Strings) is fetched from Key Vault at runtime using the Managed Identity. No secrets are stored in Environment Variables.
+    - **VNet Integration**: The Container App resides in a private VNet. External access is routed through a Web Application Firewall (WAF).
 
 ### 3. Permission Scopes
 The bot requires the following delegated permissions from the user:

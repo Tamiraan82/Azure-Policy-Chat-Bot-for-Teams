@@ -1,10 +1,10 @@
 # Implementation Specification: Azure Policy Chat Bot
 
-This document outlines the infrastructure, identity, and deployment requirements for the Azure Policy Chat Bot.
+This document outlines the infrastructure, identity, and deployment requirements for the Azure Policy Chat Bot, following a **Zero-Secret** and **Federated Identity** model.
 
 ## 1. Prerequisites & Versioning
 
-To ensure compatibility and security, use the following versions for development and deployment:
+To ensure compatibility and security, use the following versions:
 
 | Category | Requirement | Version |
 | :--- | :--- | :--- |
@@ -16,56 +16,59 @@ To ensure compatibility and security, use the following versions for development
 
 ## 2. Azure Regional Strategy
 
-The bot's deployment is constrained by **Azure OpenAI** availability. For optimal performance and minimal latency, it is recommended to deploy all resources in a single region where OpenAI is available.
+Deploy all resources in a single region where **Azure OpenAI** is available to minimize latency.
 
 > [!IMPORTANT]
 > **Recommended Region**: `swedencentral` or `eastus2`.
-> Sweden Central offers superior availability for GPT-4 (including Turbo) and has a lower carbon footprint.
+> Sweden Central offers superior availability for GPT-4 (including Turbo).
 
 ## 3. Required Azure Resources
 
 | Resource | Service | Purpose |
 | :--- | :--- | :--- |
-| **Compute** | Azure Container Apps | Hosts the Python bot backend. |
+| **Compute** | Azure Container Apps | Hosts the Python bot backend with User-Assigned Identity. |
 | **Intelligence** | Azure OpenAI Service | Intent extraction and KQL generation. |
-| **Security** | Azure Key Vault | Stores application secrets and Entra ID client secrets. |
-| **Identity** | User-Assigned Managed Identity | Identity for the Container App to access Azure resources. |
+| **Security** | Azure Key Vault | Stores application configuration (No client secrets). |
+| **Identity** | User-Assigned Managed Identity | Zero-secret identity for the Container App. |
 | **Storage** | Azure Container Registry | Stores the bot's Docker images. |
 | **Monitoring** | Application Insights | Logging, telemetry, and performance tracking. |
 
-## 4. Entra ID Applications
+## 4. Federated Identity & Zero-Secret Strategy
 
-The solution requires two primary Entra ID (formerly Azure AD) App Registrations to facilitate the Teams integration and the On-Behalf-Of (OBO) authentication flow.
+This solution eliminates long-lived client secrets in favor of **OIDC Federation** and **Managed Identities**.
 
-### A. Bot Channel Registration App
-- **Purpose**: Authenticates the bot with the Microsoft Bot Framework and Teams.
-- **Key Settings**:
-    - **Client ID**: Used as the `MicrosoftAppId`.
-    - **Client Secret**: Stored in Key Vault.
-    - **Redirect URIs**: Should point to `https://<your-app>.azurecontainerapps.io/api/auth-response`.
+### A. Infrastructure Deployment (Terraform via ADO)
+Instead of using a Service Principal with a secret, use **Workload Identity Federation**:
+1. Create an Azure DevOps Service Connection using **Workload Identity Federation**.
+2. Configure the Terraform provider to use OIDC:
+   ```hcl
+   provider "azurerm" {
+     features {}
+     use_oidc = true
+   }
+   ```
 
-### B. API / OBO App Registration
-- **Purpose**: Allows the bot to request access tokens for Azure Management APIs (ARG/ARM) on behalf of the signed-in Teams user.
-- **Required Delegated Permissions**:
-    - `Azure Service Management`: `user_impersonation`
-    - `Microsoft Graph`: `User.Read`, `openid`, `profile`
-- **Exposed API**: Must expose a scope (e.g., `access_as_user`).
-- **Pre-authorized Clients**: Add Teams Mobile/Desktop IDs (`1fec8e78-bce4-4aaf-ab1b-5451cc387264`, `5e3ce6c0-2b1f-4285-8d4b-75ee78187346`).
+### B. Bot App Registration (Federated Credentials)
+The Bot App Registration (used for Teams) communicates with the backend via **Federated Credentials**:
+- **Subject**: The User-Assigned Managed Identity of the Container App.
+- **Trust**: The Bot App registration trusts the Managed Identity, eliminating the need for a `MICROSOFT_APP_PASSWORD`.
+
+### C. API / OBO App Registration
+- **Purpose**: Facilitates On-Behalf-Of (OBO) token exchange for Azure Graph/ARM.
+- **Federation**: This app should also be configured with a Federated Credential trust for the Bot's Managed Identity.
+- **Permissions**: `Azure Service Management (user_impersonation)`.
 
 ## 5. Roles & Identities (Least Privilege)
 
-Following the Zero Trust model, the Bot backend itself has **no standing permissions** to read Azure Policy data. All data access occurs via the user's delegated identity.
+The Bot backend has **zero** standing reader/contributor roles on subscriptions. All compliance data is fetched using the user's delegated identity.
 
-### Managed Identity Roles
-The **User-Assigned Managed Identity** attached to the Container App requires:
-- `Key Vault Secrets User`: To read secrets from Key Vault.
-- `Cognitive Services User`: To call the Azure OpenAI API.
-- `AcrPull`: To pull images from the Azure Container Registry.
+### Managed Identity Roles (Bot Backend)
+- `Key Vault Secrets User`: Required to fetch app configuration.
+- `Cognitive Services User`: Required to call Azure OpenAI.
+- `AcrPull`: For the Container App to pull its own image.
 
 ### User RBAC Requirements
-Users interacting with the bot in Teams must have at least:
-- `Reader` (at the desired scope): To view policy assignments and resource data.
-- `Resource Policy Contributor` (optional): If the bot is extended to allow creation/remediation.
+- Users must have `Reader` permissions on the target subscriptions/resource groups to see compliance data.
 
 ## 6. Architecture Diagrams
 
@@ -75,10 +78,17 @@ Users interacting with the bot in Teams must have at least:
 ### Authentication Flow (OBO)
 ![OAuth2 OBO Flow](docs/images/auth_flow.png)
 
-## 7. Terraform Implementation Snippet
+## 7. Terraform Implementation Snippet (OIDC & Managed Identity)
 
 ```hcl
-# Container App with Identity
+# Use Managed Identity for the Container App
+resource "azurerm_user_assigned_identity" "bot" {
+  name                = "id-policy-bot"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+}
+
+# Container App with zero secrets in ENV
 resource "azurerm_container_app" "bot" {
   name                         = "ca-policy-bot"
   resource_group_name          = azurerm_resource_group.main.name
@@ -98,8 +108,12 @@ resource "azurerm_container_app" "bot" {
       memory = "1Gi"
       
       env {
-        name  = "AZURE_OPENAI_ENDPOINT"
-        value = azurerm_cognitive_account.openai.endpoint
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.bot.client_id
+      }
+      env {
+        name  = "AZURE_TENANT_ID"
+        value = data.azurerm_client_config.current.tenant_id
       }
     }
   }
